@@ -12,6 +12,8 @@ Usage: claude-rec [OPTIONS]
 Options:
   -o, --output <DIR>      Output directory (default: ~/Recordings/claude-skills)
   -i, --idle <SECONDS>    Compress idle gaps to N seconds (default: 0.3)
+  -d, --dangerously-skip-permissions
+                          Launch claude with --dangerously-skip-permissions
       --no-mp4            Skip mp4 generation (still produces cast + gif)
       --cast-only         Skip all conversion (only .cast file)
       --no-compress-spinner
@@ -98,6 +100,7 @@ main() {
   local no_mp4=0
   local cast_only=0
   local compress_spinner=1
+  local dangerous=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -108,6 +111,7 @@ main() {
       -i|--idle)
         [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
         idle="$2"; shift 2 ;;
+      -d|--dangerously-skip-permissions) dangerous=1; shift ;;
       --no-mp4)     no_mp4=1; shift ;;
       --cast-only)  cast_only=1; shift ;;
       --no-compress-spinner) compress_spinner=0; shift ;;
@@ -128,10 +132,15 @@ main() {
   gif_path="$base.gif"
   mp4_path="$base.mp4"
 
+  local claude_cmd="claude"
+  if [[ $dangerous -eq 1 ]]; then
+    claude_cmd="claude --dangerously-skip-permissions"
+  fi
+
   echo "output dir ready: $output_dir"
   echo "recording to: $cast_path"
   echo "(exit claude with /quit when done)"
-  if ! asciinema rec --idle-time-limit="$idle" --command "claude" "$cast_path"; then
+  if ! asciinema rec --idle-time-limit="$idle" --command "$claude_cmd" "$cast_path"; then
     echo "warning: claude exited non-zero (cast file is still valid)" >&2
   fi
   echo "recording stopped: $cast_path"

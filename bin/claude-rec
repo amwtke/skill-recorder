@@ -116,6 +116,26 @@ main() {
     echo "warning: claude exited non-zero (cast file is still valid)" >&2
   fi
   echo "recording stopped: $cast_path"
+
+  if [[ $cast_only -eq 1 ]]; then
+    echo "skipping conversion (--cast-only)"
+  else
+    echo "converting to gif: $gif_path"
+    if ! agg "$cast_path" "$gif_path"; then
+      echo "warning: agg failed; .cast preserved at $cast_path" >&2
+      exit 0
+    fi
+
+    if [[ $no_mp4 -eq 1 ]]; then
+      echo "skipping mp4 (--no-mp4)"
+    else
+      echo "converting to mp4: $mp4_path"
+      if ! ffmpeg -y -i "$gif_path" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -movflags +faststart -pix_fmt yuv420p "$mp4_path" 2>/dev/null; then
+        echo "warning: ffmpeg failed; .cast and .gif preserved" >&2
+        exit 0
+      fi
+    fi
+  fi
 }
 
 main "$@"

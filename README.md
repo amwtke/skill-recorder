@@ -52,15 +52,23 @@ Ubuntu has no official `agg` package, so a Rust toolchain (`cargo`) is required.
 
 The `claude` CLI itself is not installed by this script — install Claude Code separately from https://docs.claude.com/en/docs/claude-code.
 
-### Put `claude-rec` on your PATH
+### Global `claude-rec` command
 
-```
-mkdir -p ~/.local/bin
-cp bin/claude-rec bin/compress-spinner.py ~/.local/bin/
-chmod +x ~/.local/bin/claude-rec ~/.local/bin/compress-spinner.py
+By default, `install.sh` symlinks `claude-rec` and `compress-spinner.py` into `~/.local/bin/`. After install:
+
+```bash
+claude-rec --help        # callable from anywhere
 ```
 
-Make sure `~/.local/bin` is in your `$PATH`.
+If `~/.local/bin` isn't on your `$PATH`, the script prints a one-line snippet to add to your shell profile.
+
+The symlinks point back into the repo, so `git pull` updates `claude-rec` instantly without re-installing.
+
+To skip the symlink step (deps only):
+
+```bash
+./bin/install.sh --no-link
+```
 
 ## Usage
 

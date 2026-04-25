@@ -75,6 +75,15 @@ prepare_paths() {
   echo "${out_dir%/}/claude-${ts}"
 }
 
+print_size() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    local size
+    size="$(du -h "$file" | awk '{print $1}')"
+    echo "  $file ($size)"
+  fi
+}
+
 main() {
   local output_dir="$HOME/Recordings/claude-skills"
   local idle="1"
@@ -117,25 +126,32 @@ main() {
   fi
   echo "recording stopped: $cast_path"
 
+  local gif_ok=0
   if [[ $cast_only -eq 1 ]]; then
     echo "skipping conversion (--cast-only)"
   else
     echo "converting to gif: $gif_path"
-    if ! agg "$cast_path" "$gif_path"; then
+    if agg "$cast_path" "$gif_path"; then
+      gif_ok=1
+    else
       echo "warning: agg failed; .cast preserved at $cast_path" >&2
-      exit 0
     fi
 
-    if [[ $no_mp4 -eq 1 ]]; then
-      echo "skipping mp4 (--no-mp4)"
-    else
+    if [[ $gif_ok -eq 1 && $no_mp4 -eq 0 ]]; then
       echo "converting to mp4: $mp4_path"
       if ! ffmpeg -y -i "$gif_path" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -movflags +faststart -pix_fmt yuv420p "$mp4_path" 2>/dev/null; then
         echo "warning: ffmpeg failed; .cast and .gif preserved" >&2
-        exit 0
       fi
+    elif [[ $no_mp4 -eq 1 && $gif_ok -eq 1 ]]; then
+      echo "skipping mp4 (--no-mp4)"
     fi
   fi
+
+  echo
+  echo "done. files:"
+  print_size "$cast_path"
+  print_size "$gif_path"
+  print_size "$mp4_path"
 }
 
 main "$@"

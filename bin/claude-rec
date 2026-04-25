@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+show_help() {
+  cat <<'EOF'
+claude-rec — record a Claude Code session as cast/gif/mp4
+
+Usage: claude-rec [OPTIONS]
+
+Options:
+  -o, --output <DIR>     Output directory (default: ~/Recordings/claude-skills)
+  -i, --idle <SECONDS>   Compress idle gaps to N seconds (default: 1)
+      --no-mp4           Skip mp4 generation (still produces cast + gif)
+      --cast-only        Skip all conversion (only .cast file)
+  -h, --help             Show this help
+
+Output files: <DIR>/claude-YYYYMMDD-HHMMSS.{cast,gif,mp4}
+EOF
+}
+
+main() {
+  case "${1:-}" in
+    -h|--help) show_help; exit 0 ;;
+  esac
+  echo "stub: not implemented yet" >&2
+  exit 1
+}
+
+main "$@"

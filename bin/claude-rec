@@ -67,6 +67,14 @@ check_deps() {
   fi
 }
 
+prepare_paths() {
+  local out_dir="$1"
+  local ts
+  ts="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$out_dir"
+  echo "${out_dir%/}/claude-${ts}"
+}
+
 main() {
   local output_dir="$HOME/Recordings/claude-skills"
   local idle="1"
@@ -94,8 +102,15 @@ main() {
   fi
 
   check_deps
-  echo "all deps OK"
-  echo "output_dir=$output_dir idle=$idle no_mp4=$no_mp4 cast_only=$cast_only"
+
+  local base cast_path gif_path mp4_path
+  base="$(prepare_paths "$output_dir")"
+  cast_path="$base.cast"
+  gif_path="$base.gif"
+  mp4_path="$base.mp4"
+
+  echo "output dir ready: $output_dir"
+  echo "would record to: $cast_path"
 }
 
 main "$@"

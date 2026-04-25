@@ -18,6 +18,55 @@ Output files: <DIR>/claude-YYYYMMDD-HHMMSS.{cast,gif,mp4}
 EOF
 }
 
+detect_os() {
+  case "$(uname -s)" in
+    Darwin) echo "macos" ;;
+    Linux)  echo "linux" ;;
+    *)      echo "unsupported" ;;
+  esac
+}
+
+install_hint() {
+  local tool="$1" os="$2"
+  case "$os:$tool" in
+    macos:asciinema) echo "  brew install asciinema" ;;
+    macos:agg)       echo "  brew install agg" ;;
+    macos:ffmpeg)    echo "  brew install ffmpeg" ;;
+    linux:asciinema) echo "  sudo apt install asciinema" ;;
+    linux:agg)       echo "  cargo install --git https://github.com/asciinema/agg" ;;
+    linux:ffmpeg)    echo "  sudo apt install ffmpeg" ;;
+    *:claude)        echo "  see Claude Code install docs" ;;
+    *)               echo "  (no install hint available)" ;;
+  esac
+}
+
+check_dep() {
+  local tool="$1" os="$2"
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "error: '$tool' not found in PATH" >&2
+    echo "install with:" >&2
+    install_hint "$tool" "$os" >&2
+    exit 1
+  fi
+}
+
+check_deps() {
+  local os
+  os="$(detect_os)"
+  if [[ "$os" == "unsupported" ]]; then
+    echo "error: unsupported OS ($(uname -s)). claude-rec supports macOS and Linux." >&2
+    exit 1
+  fi
+  check_dep claude "$os"
+  check_dep asciinema "$os"
+  if [[ $cast_only -eq 0 ]]; then
+    check_dep agg "$os"
+  fi
+  if [[ $no_mp4 -eq 0 ]]; then
+    check_dep ffmpeg "$os"
+  fi
+}
+
 main() {
   local output_dir="$HOME/Recordings/claude-skills"
   local idle="1"
@@ -44,11 +93,9 @@ main() {
     no_mp4=1
   fi
 
-  # Debug echos — will be replaced in later tasks
-  echo "output_dir=$output_dir"
-  echo "idle=$idle"
-  echo "no_mp4=$no_mp4"
-  echo "cast_only=$cast_only"
+  check_deps
+  echo "all deps OK"
+  echo "output_dir=$output_dir idle=$idle no_mp4=$no_mp4 cast_only=$cast_only"
 }
 
 main "$@"

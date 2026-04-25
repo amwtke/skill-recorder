@@ -27,8 +27,12 @@ main() {
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)    show_help; exit 0 ;;
-      -o|--output)  output_dir="$2"; shift 2 ;;
-      -i|--idle)    idle="$2"; shift 2 ;;
+      -o|--output)
+        [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
+        output_dir="$2"; shift 2 ;;
+      -i|--idle)
+        [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
+        idle="$2"; shift 2 ;;
       --no-mp4)     no_mp4=1; shift ;;
       --cast-only)  cast_only=1; shift ;;
       *) echo "unknown option: $1" >&2; show_help >&2; exit 2 ;;

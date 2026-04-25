@@ -110,7 +110,12 @@ main() {
   mp4_path="$base.mp4"
 
   echo "output dir ready: $output_dir"
-  echo "would record to: $cast_path"
+  echo "recording to: $cast_path"
+  echo "(exit claude with /quit when done)"
+  if ! asciinema rec --idle-time-limit="$idle" --command "claude" "$cast_path"; then
+    echo "warning: claude exited non-zero (cast file is still valid)" >&2
+  fi
+  echo "recording stopped: $cast_path"
 }
 
 main "$@"

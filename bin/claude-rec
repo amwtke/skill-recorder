@@ -1,0 +1,183 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
+show_help() {
+  cat <<'EOF'
+claude-rec — record a Claude Code session as cast/gif/mp4
+
+Usage: claude-rec [OPTIONS]
+
+Options:
+  -o, --output <DIR>      Output directory (default: ~/Recordings/claude-skills)
+  -i, --idle <SECONDS>    Compress idle gaps to N seconds (default: 0.3)
+      --no-mp4            Skip mp4 generation (still produces cast + gif)
+      --cast-only         Skip all conversion (only .cast file)
+      --no-compress-spinner
+                          Don't pre-process cast to compress spinner animations
+                          (e.g. Claude Code's "Envisioning…" indicator)
+  -h, --help              Show this help
+
+Output files: <DIR>/claude-YYYYMMDD-HHMMSS.{cast,gif,mp4}
+EOF
+}
+
+detect_os() {
+  case "$(uname -s)" in
+    Darwin) echo "macos" ;;
+    Linux)  echo "linux" ;;
+    *)      echo "unsupported" ;;
+  esac
+}
+
+install_hint() {
+  local tool="$1" os="$2"
+  case "$os:$tool" in
+    macos:asciinema) echo "  brew install asciinema" ;;
+    macos:agg)       echo "  brew install agg" ;;
+    macos:ffmpeg)    echo "  brew install ffmpeg" ;;
+    linux:asciinema) echo "  sudo apt install asciinema" ;;
+    linux:agg)       echo "  cargo install --git https://github.com/asciinema/agg" ;;
+    linux:ffmpeg)    echo "  sudo apt install ffmpeg" ;;
+    *:claude)        echo "  see Claude Code install docs" ;;
+    *)               echo "  (no install hint available)" ;;
+  esac
+}
+
+check_dep() {
+  local tool="$1" os="$2"
+  if ! command -v "$tool" >/dev/null 2>&1; then
+    echo "error: '$tool' not found in PATH" >&2
+    echo "install with:" >&2
+    install_hint "$tool" "$os" >&2
+    exit 1
+  fi
+}
+
+check_deps() {
+  local os
+  os="$(detect_os)"
+  if [[ "$os" == "unsupported" ]]; then
+    echo "error: unsupported OS ($(uname -s)). claude-rec supports macOS and Linux." >&2
+    exit 1
+  fi
+  check_dep claude "$os"
+  check_dep asciinema "$os"
+  if [[ $cast_only -eq 0 ]]; then
+    check_dep agg "$os"
+    if [[ $compress_spinner -eq 1 ]]; then
+      check_dep python3 "$os"
+    fi
+  fi
+  if [[ $no_mp4 -eq 0 ]]; then
+    check_dep ffmpeg "$os"
+  fi
+}
+
+prepare_paths() {
+  local out_dir="$1"
+  local ts
+  ts="$(date +%Y%m%d-%H%M%S)"
+  mkdir -p "$out_dir"
+  echo "${out_dir%/}/claude-${ts}"
+}
+
+print_size() {
+  local file="$1"
+  if [[ -f "$file" ]]; then
+    local size
+    size="$(du -h "$file" | awk '{print $1}')"
+    echo "  $file ($size)"
+  fi
+}
+
+main() {
+  local output_dir="$HOME/Recordings/claude-skills"
+  local idle="0.3"
+  local no_mp4=0
+  local cast_only=0
+  local compress_spinner=1
+
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -h|--help)    show_help; exit 0 ;;
+      -o|--output)
+        [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
+        output_dir="$2"; shift 2 ;;
+      -i|--idle)
+        [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
+        idle="$2"; shift 2 ;;
+      --no-mp4)     no_mp4=1; shift ;;
+      --cast-only)  cast_only=1; shift ;;
+      --no-compress-spinner) compress_spinner=0; shift ;;
+      *) echo "unknown option: $1" >&2; show_help >&2; exit 2 ;;
+    esac
+  done
+
+  # cast-only is more aggressive than no-mp4
+  if [[ $cast_only -eq 1 ]]; then
+    no_mp4=1
+  fi
+
+  check_deps
+
+  local base cast_path gif_path mp4_path
+  base="$(prepare_paths "$output_dir")"
+  cast_path="$base.cast"
+  gif_path="$base.gif"
+  mp4_path="$base.mp4"
+
+  echo "output dir ready: $output_dir"
+  echo "recording to: $cast_path"
+  echo "(exit claude with /quit when done)"
+  if ! asciinema rec --idle-time-limit="$idle" --command "claude" "$cast_path"; then
+    echo "warning: claude exited non-zero (cast file is still valid)" >&2
+  fi
+  echo "recording stopped: $cast_path"
+
+  local gif_ok=0
+  if [[ $cast_only -eq 1 ]]; then
+    echo "skipping conversion (--cast-only)"
+  else
+    local agg_input="$cast_path"
+    local compressed_cast=""
+    if [[ $compress_spinner -eq 1 ]]; then
+      compressed_cast="$base.compressed.cast"
+      if python3 "$SCRIPT_DIR/compress-spinner.py" "$cast_path" "$compressed_cast"; then
+        agg_input="$compressed_cast"
+      else
+        echo "warning: spinner compression failed; using raw cast" >&2
+        compressed_cast=""
+      fi
+    fi
+
+    echo "converting to gif: $gif_path"
+    if agg "$agg_input" "$gif_path"; then
+      gif_ok=1
+    else
+      echo "warning: agg failed; .cast preserved at $cast_path" >&2
+    fi
+
+    if [[ -n "$compressed_cast" && -f "$compressed_cast" ]]; then
+      rm -f "$compressed_cast"
+    fi
+
+    if [[ $gif_ok -eq 1 && $no_mp4 -eq 0 ]]; then
+      echo "converting to mp4: $mp4_path"
+      if ! ffmpeg -y -i "$gif_path" -vf "scale=trunc(iw/2)*2:trunc(ih/2)*2" -movflags +faststart -pix_fmt yuv420p "$mp4_path" 2>/dev/null; then
+        echo "warning: ffmpeg failed; .cast and .gif preserved" >&2
+      fi
+    elif [[ $no_mp4 -eq 1 && $gif_ok -eq 1 ]]; then
+      echo "skipping mp4 (--no-mp4)"
+    fi
+  fi
+
+  echo
+  echo "done. files:"
+  print_size "$cast_path"
+  print_size "$gif_path"
+  print_size "$mp4_path"
+}
+
+main "$@"

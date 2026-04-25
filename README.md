@@ -4,29 +4,39 @@ Record [Claude Code](https://docs.claude.com/en/docs/claude-code) sessions as `.
 
 ## Install
 
-### 1. Dependencies
+### Quick install (one command)
 
-**macOS:**
 ```
-brew install asciinema agg ffmpeg
-```
-
-**Ubuntu Linux:**
-```
-sudo apt install asciinema ffmpeg
-cargo install --git https://github.com/asciinema/agg
+./bin/install.sh
 ```
 
-(Ubuntu does not have an official `agg` package — `cargo` and a Rust toolchain are required for the `agg` install.)
+Auto-detects macOS or Debian/Ubuntu and installs everything. Idempotent — safe to re-run.
 
-Also requires the `claude` CLI in `$PATH`.
+Inside Claude Code, you can also invoke the project-local skill:
 
-### 2. The script
+```
+/install
+```
+
+### What it installs
+
+| Tool | macOS | Ubuntu Linux |
+|---|---|---|
+| asciinema | `brew install asciinema` | `sudo apt install asciinema` |
+| agg | `brew install agg` | `cargo install --git https://github.com/asciinema/agg` (no apt package) |
+| ffmpeg | `brew install ffmpeg` | `sudo apt install ffmpeg` |
+| python3 | `brew install python3` | `sudo apt install python3` |
+
+Ubuntu has no official `agg` package, so a Rust toolchain (`cargo`) is required. The installer tries `apt install cargo` first; if that fails, install Rust from https://rustup.rs/ and re-run.
+
+The `claude` CLI itself is not installed by this script — install Claude Code separately from https://docs.claude.com/en/docs/claude-code.
+
+### Put `claude-rec` on your PATH
 
 ```
 mkdir -p ~/.local/bin
-cp bin/claude-rec ~/.local/bin/
-chmod +x ~/.local/bin/claude-rec
+cp bin/claude-rec bin/compress-spinner.py ~/.local/bin/
+chmod +x ~/.local/bin/claude-rec ~/.local/bin/compress-spinner.py
 ```
 
 Make sure `~/.local/bin` is in your `$PATH`.

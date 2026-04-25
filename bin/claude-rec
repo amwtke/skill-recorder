@@ -9,7 +9,7 @@ Usage: claude-rec [OPTIONS]
 
 Options:
   -o, --output <DIR>     Output directory (default: ~/Recordings/claude-skills)
-  -i, --idle <SECONDS>   Compress idle gaps to N seconds (default: 1)
+  -i, --idle <SECONDS>   Compress idle gaps to N seconds (default: 0.3)
       --no-mp4           Skip mp4 generation (still produces cast + gif)
       --cast-only        Skip all conversion (only .cast file)
   -h, --help             Show this help
@@ -86,7 +86,7 @@ print_size() {
 
 main() {
   local output_dir="$HOME/Recordings/claude-skills"
-  local idle="1"
+  local idle="0.3"
   local no_mp4=0
   local cast_only=0
 

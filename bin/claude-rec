@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pwd )"
+
 show_help() {
   cat <<'EOF'
 claude-rec — record a Claude Code session as cast/gif/mp4
@@ -8,11 +10,14 @@ claude-rec — record a Claude Code session as cast/gif/mp4
 Usage: claude-rec [OPTIONS]
 
 Options:
-  -o, --output <DIR>     Output directory (default: ~/Recordings/claude-skills)
-  -i, --idle <SECONDS>   Compress idle gaps to N seconds (default: 0.3)
-      --no-mp4           Skip mp4 generation (still produces cast + gif)
-      --cast-only        Skip all conversion (only .cast file)
-  -h, --help             Show this help
+  -o, --output <DIR>      Output directory (default: ~/Recordings/claude-skills)
+  -i, --idle <SECONDS>    Compress idle gaps to N seconds (default: 0.3)
+      --no-mp4            Skip mp4 generation (still produces cast + gif)
+      --cast-only         Skip all conversion (only .cast file)
+      --no-compress-spinner
+                          Don't pre-process cast to compress spinner animations
+                          (e.g. Claude Code's "Envisioning…" indicator)
+  -h, --help              Show this help
 
 Output files: <DIR>/claude-YYYYMMDD-HHMMSS.{cast,gif,mp4}
 EOF
@@ -61,6 +66,9 @@ check_deps() {
   check_dep asciinema "$os"
   if [[ $cast_only -eq 0 ]]; then
     check_dep agg "$os"
+    if [[ $compress_spinner -eq 1 ]]; then
+      check_dep python3 "$os"
+    fi
   fi
   if [[ $no_mp4 -eq 0 ]]; then
     check_dep ffmpeg "$os"
@@ -89,6 +97,7 @@ main() {
   local idle="0.3"
   local no_mp4=0
   local cast_only=0
+  local compress_spinner=1
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -101,6 +110,7 @@ main() {
         idle="$2"; shift 2 ;;
       --no-mp4)     no_mp4=1; shift ;;
       --cast-only)  cast_only=1; shift ;;
+      --no-compress-spinner) compress_spinner=0; shift ;;
       *) echo "unknown option: $1" >&2; show_help >&2; exit 2 ;;
     esac
   done
@@ -130,11 +140,27 @@ main() {
   if [[ $cast_only -eq 1 ]]; then
     echo "skipping conversion (--cast-only)"
   else
+    local agg_input="$cast_path"
+    local compressed_cast=""
+    if [[ $compress_spinner -eq 1 ]]; then
+      compressed_cast="$base.compressed.cast"
+      if python3 "$SCRIPT_DIR/compress-spinner.py" "$cast_path" "$compressed_cast"; then
+        agg_input="$compressed_cast"
+      else
+        echo "warning: spinner compression failed; using raw cast" >&2
+        compressed_cast=""
+      fi
+    fi
+
     echo "converting to gif: $gif_path"
-    if agg "$cast_path" "$gif_path"; then
+    if agg "$agg_input" "$gif_path"; then
       gif_ok=1
     else
       echo "warning: agg failed; .cast preserved at $cast_path" >&2
+    fi
+
+    if [[ -n "$compressed_cast" && -f "$compressed_cast" ]]; then
+      rm -f "$compressed_cast"
     fi
 
     if [[ $gif_ok -eq 1 && $no_mp4 -eq 0 ]]; then

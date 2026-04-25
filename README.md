@@ -1,22 +1,43 @@
 # claude-rec
 
-Record [Claude Code](https://docs.claude.com/en/docs/claude-code) sessions as `.cast` / `.gif` / `.mp4`. Idle gaps are auto-compressed using asciinema.
+Record [Claude Code](https://docs.claude.com/en/docs/claude-code) sessions as `.cast` / `.gif` / `.mp4`. Idle gaps are auto-compressed using asciinema; animated progress spinners ("Envisioning…", npm/docker bars, …) are collapsed to a 0.5s flash via cast pre-processing.
+
+## Quick start (bare machine)
+
+```bash
+git clone git@github.com:amwtke/skill-recorder.git
+cd skill-recorder
+./bin/install.sh        # installs asciinema, agg, ffmpeg, python3
+./bin/claude-rec        # record a session
+```
+
+Inside Claude Code, after cloning, you can also use the project-local skill:
+
+```bash
+cd skill-recorder
+claude                  # launch Claude Code in this repo
+/install                # invokes .claude/skills/install
+```
 
 ## Install
 
-### Quick install (one command)
+### Option A — one-command (recommended)
 
 ```
 ./bin/install.sh
 ```
 
-Auto-detects macOS or Debian/Ubuntu and installs everything. Idempotent — safe to re-run.
+Auto-detects macOS or Debian/Ubuntu and installs everything below. Idempotent — already-installed deps are skipped.
 
-Inside Claude Code, you can also invoke the project-local skill:
+### Option B — `/install` skill (when inside Claude Code)
+
+The repo ships with a project-local skill at `.claude/skills/install`. Inside a Claude Code session opened in this repo, just type:
 
 ```
 /install
 ```
+
+The model runs `bin/install.sh` and walks through any prompts (e.g. `sudo` on Linux).
 
 ### What it installs
 

@@ -7,19 +7,21 @@ appear as an animation but contain no substantial new content (e.g.,
 Claude Code's "Envisioning..." / "Imagining..." status indicators,
 npm/docker/git progress bars, etc).
 
-Heuristic: a run of >= MIN_RUN_LENGTH consecutive events where each event
-is < MAX_EVENT_BYTES bytes and each delta is < MAX_DELTA seconds is
-collapsed to a single "last frame" event with a fixed COMPRESSED_DURATION
-delta. Real streamed content (typically larger events with formatted
-output) is preserved.
+Heuristic (tunable per platform via spinners/<platform>.py): a run of
+>= min_run_length consecutive events where each event is <
+max_event_bytes bytes and each delta is < max_delta seconds is collapsed
+to a single "last frame" event with a fixed compressed_duration delta.
+Real streamed content (typically larger events with formatted output) is
+preserved.
 
-We also drop "invisible" events whose payload consists entirely of OSC
-sequences (window title, badges, iTerm2 notifications). agg renders only
-the terminal grid, so these change nothing on screen — but each one is
-still a separate cast event, which fragments long subagent-wait gaps
-into many medium gaps that idle-time-limit cannot fully collapse. The
-dropped event's delta is folded into the next visible event so timing
-stays correct.
+We also drop "invisible" events whose payload renders nothing on the
+terminal grid (default: payloads consisting entirely of OSC sequences —
+window title, badges, iTerm2 notifications). agg renders only the
+terminal grid, so these change nothing on screen — but each one is still
+a separate cast event, which fragments long subagent-wait gaps into many
+medium gaps that idle-time-limit cannot fully collapse. The dropped
+event's delta is folded into the next visible event so timing stays
+correct.
 
 v2 and v3 differ in the first field of each event tuple: v2 stores an
 absolute timestamp, v3 stores a delta from the previous event. We read
@@ -27,47 +29,62 @@ both, work in deltas internally, and emit in whichever format the input
 used so downstream tools (e.g. agg) keep working.
 
 Streams input → output line by line; the in-memory buffer holds at most
-MIN_RUN_LENGTH events, so peak memory stays bounded regardless of cast
+min_run_length events, so peak memory stays bounded regardless of cast
 length (safe for multi-hour recordings).
 
-Usage: compress-spinner.py <input.cast> <output.cast>
+Usage: compress-spinner.py [--platform NAME] <input.cast> <output.cast>
 """
+import argparse
 import json
-import re
+import os
 import shutil
 import sys
 
-MIN_RUN_LENGTH = 15
-MAX_EVENT_BYTES = 250
-MAX_DELTA = 0.3
-COMPRESSED_DURATION = 0.5
+# Resolve the real script path so the spinners/ package is importable
+# even when this script is invoked through a symlink (install.sh links
+# it into ~/.local/bin/).
+_REAL_DIR = os.path.dirname(os.path.realpath(__file__))
+if _REAL_DIR not in sys.path:
+    sys.path.insert(0, _REAL_DIR)
 
-# OSC sequence: ESC ] ... (BEL | ESC \). Body cannot contain BEL or ESC
-# except as part of the ST terminator.
-_OSC_RE = re.compile(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)")
+from spinners import load as load_strategy
 
 
-def is_invisible_event(kind, data):
-    """True if this output event renders nothing on the terminal grid —
-    i.e. its payload is entirely OSC sequences (and nothing else)."""
-    if kind != "o" or not data:
-        return False
-    return _OSC_RE.sub("", data) == ""
+def parse_args():
+    p = argparse.ArgumentParser(
+        description="Compress spinner-like runs in an asciinema cast file.",
+    )
+    p.add_argument("input", help="input .cast file")
+    p.add_argument("output", help="output .cast file")
+    p.add_argument(
+        "--platform",
+        default="claude",
+        help="spinner-strategy name (default: claude). Maps to spinners/<name>.py",
+    )
+    return p.parse_args()
 
 
 def main():
-    if len(sys.argv) != 3:
-        print("usage: compress-spinner.py <input.cast> <output.cast>", file=sys.stderr)
+    args = parse_args()
+
+    try:
+        strategy = load_strategy(args.platform)
+    except ModuleNotFoundError:
+        print(
+            f"compress-spinner: unknown platform {args.platform!r} "
+            f"(no spinners/{args.platform}.py)",
+            file=sys.stderr,
+        )
         sys.exit(2)
 
-    inp, out = sys.argv[1], sys.argv[2]
+    inp, out = args.input, args.output
 
     buffer = []
     stats = {
         "saved": 0.0,
         "runs_compressed": 0,
         "events_dropped": 0,
-        "osc_dropped": 0,
+        "invisible_dropped": 0,
     }
 
     with open(inp) as f_in, open(out, "w") as f_out:
@@ -102,11 +119,11 @@ def main():
         def flush():
             if not buffer:
                 return
-            if len(buffer) >= MIN_RUN_LENGTH:
+            if len(buffer) >= strategy.min_run_length:
                 run_time = sum(e[0] for e in buffer)
                 _, kind, data = buffer[-1]
-                write_event(COMPRESSED_DURATION, kind, data)
-                stats["saved"] += run_time - COMPRESSED_DURATION
+                write_event(strategy.compressed_duration, kind, data)
+                stats["saved"] += run_time - strategy.compressed_duration
                 stats["runs_compressed"] += 1
                 stats["events_dropped"] += len(buffer) - 1
             else:
@@ -125,15 +142,15 @@ def main():
             else:
                 delta = t
 
-            if is_invisible_event(kind, data):
+            if strategy.is_invisible(kind, data):
                 pending_delta += delta
-                stats["osc_dropped"] += 1
+                stats["invisible_dropped"] += 1
                 continue
 
             delta += pending_delta
             pending_delta = 0.0
 
-            if len(data.encode()) < MAX_EVENT_BYTES and delta < MAX_DELTA:
+            if strategy.is_spinner_event(delta, data):
                 buffer.append((delta, kind, data))
             else:
                 flush()
@@ -141,9 +158,10 @@ def main():
         flush()
 
     print(
-        f"compress-spinner: {stats['runs_compressed']} run(s) compressed, "
+        f"compress-spinner[{strategy.name}]: "
+        f"{stats['runs_compressed']} run(s) compressed, "
         f"{stats['events_dropped']} events dropped, "
-        f"{stats['osc_dropped']} OSC-only events dropped, "
+        f"{stats['invisible_dropped']} invisible events dropped, "
         f"~{stats['saved']:.2f}s saved",
         file=sys.stderr,
     )

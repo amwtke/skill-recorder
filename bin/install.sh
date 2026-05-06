@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# claude-rec install script
+# cli-rec install script
 # Sets up runtime dependencies on macOS or Debian/Ubuntu Linux,
-# then symlinks claude-rec and compress-spinner.py into ~/.local/bin
+# then symlinks cli-rec and compress-spinner.py into ~/.local/bin
 # so they're on $PATH globally. Idempotent — re-running is safe.
 #
 # Usage: install.sh [--no-link]
@@ -22,7 +22,7 @@ show_help() {
   cat <<EOF
 Usage: install.sh [OPTIONS]
 
-Sets up dependencies for claude-rec and (by default) symlinks the
+Sets up dependencies for cli-rec and (by default) symlinks the
 binaries into ~/.local/bin so they're available globally on \$PATH.
 
 Options:
@@ -92,7 +92,7 @@ link_binaries() {
   say "linking binaries to $LINK_DIR..."
   mkdir -p "$LINK_DIR"
 
-  for file in claude-rec compress-spinner.py; do
+  for file in cli-rec compress-spinner.py; do
     local src="$SCRIPT_DIR/$file"
     local dst="$LINK_DIR/$file"
     if [[ ! -f "$src" ]]; then
@@ -110,7 +110,7 @@ link_binaries() {
     *)
       warn "$LINK_DIR is NOT on \$PATH. Add this to your shell profile (~/.zshrc or ~/.bashrc):"
       warn '    export PATH="$HOME/.local/bin:$PATH"'
-      warn "After sourcing it, you can run 'claude-rec' from anywhere."
+      warn "After sourcing it, you can run 'cli-rec' from anywhere."
       ;;
   esac
 }
@@ -127,12 +127,13 @@ verify() {
     fi
   done
 
-  if need claude; then
-    printf '  \033[32m✓\033[0m %-12s %s\n' "claude" "$(command -v claude)"
-  else
-    printf '  \033[33m○\033[0m %-12s not installed (Claude Code CLI is a separate install)\n' "claude"
-    say "see https://docs.claude.com/en/docs/claude-code"
-  fi
+  for cli in claude trae; do
+    if need "$cli"; then
+      printf '  \033[32m✓\033[0m %-12s %s\n' "$cli" "$(command -v "$cli")"
+    else
+      printf '  \033[33m○\033[0m %-12s not installed (separate install — only needed if you record this platform)\n' "$cli"
+    fi
+  done
 
   if [[ ${#missing[@]} -gt 0 ]]; then
     err "missing after install: ${missing[*]}"
@@ -172,9 +173,9 @@ main() {
 
   echo
   if [[ $NO_LINK -eq 0 ]]; then
-    say "All set! Try: claude-rec --help  (or ./bin/claude-rec --help if PATH not configured)"
+    say "All set! Try: cli-rec --help  (or ./bin/cli-rec --help if PATH not configured)"
   else
-    say "All set! Deps installed. Run: ./bin/claude-rec --help"
+    say "All set! Deps installed. Run: ./bin/cli-rec --help"
   fi
 }
 

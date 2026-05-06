@@ -5,23 +5,30 @@ SCRIPT_DIR="$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" >/dev/null 2>&1 && pw
 
 show_help() {
   cat <<'EOF'
-claude-rec — record a Claude Code session as cast/gif/mp4
+cli-rec — record an AI CLI session as cast/gif/mp4
 
-Usage: claude-rec [OPTIONS]
+Usage: cli-rec [OPTIONS]
 
 Options:
+  -p, --platform <NAME>   Platform name; selects spinner strategy and
+                          output filename prefix (default: claude).
+                          Available: claude, trae
+      --cmd <COMMAND>     Command to record (default: same as --platform).
+                          Quote if it contains arguments, e.g.
+                          --cmd "trae chat".
   -o, --output <DIR>      Output directory (default: ~/Recordings/claude-skills)
   -i, --idle <SECONDS>    Compress idle gaps to N seconds (default: 0.3)
   -d, --dangerously-skip-permissions
-                          Launch claude with --dangerously-skip-permissions
+                          Append --dangerously-skip-permissions to the
+                          launched command. Only valid when
+                          --platform=claude.
       --no-mp4            Skip mp4 generation (still produces cast + gif)
       --cast-only         Skip all conversion (only .cast file)
       --no-compress-spinner
                           Don't pre-process cast to compress spinner animations
-                          (e.g. Claude Code's "Envisioning…" indicator)
   -h, --help              Show this help
 
-Output files: <DIR>/claude-YYYYMMDD-HHMMSS.{cast,gif,mp4}
+Output files: <DIR>/<platform>-YYYYMMDD-HHMMSS.{cast,gif,mp4}
 EOF
 }
 
@@ -42,8 +49,7 @@ install_hint() {
     linux:asciinema) echo "  sudo apt install asciinema" ;;
     linux:agg)       echo "  cargo install --git https://github.com/asciinema/agg" ;;
     linux:ffmpeg)    echo "  sudo apt install ffmpeg" ;;
-    *:claude)        echo "  see Claude Code install docs" ;;
-    *)               echo "  (no install hint available)" ;;
+    *)               echo "  (no install hint available — see the tool's docs)" ;;
   esac
 }
 
@@ -58,13 +64,12 @@ check_dep() {
 }
 
 check_deps() {
-  local os
-  os="$(detect_os)"
+  local os="$1" cli_bin="$2"
   if [[ "$os" == "unsupported" ]]; then
-    echo "error: unsupported OS ($(uname -s)). claude-rec supports macOS and Linux." >&2
+    echo "error: unsupported OS ($(uname -s)). cli-rec supports macOS and Linux." >&2
     exit 1
   fi
-  check_dep claude "$os"
+  check_dep "$cli_bin" "$os"
   check_dep asciinema "$os"
   if [[ $cast_only -eq 0 ]]; then
     check_dep agg "$os"
@@ -78,11 +83,11 @@ check_deps() {
 }
 
 prepare_paths() {
-  local out_dir="$1"
+  local out_dir="$1" platform="$2"
   local ts
   ts="$(date +%Y%m%d-%H%M%S)"
   mkdir -p "$out_dir"
-  echo "${out_dir%/}/claude-${ts}"
+  echo "${out_dir%/}/${platform}-${ts}"
 }
 
 print_size() {
@@ -97,14 +102,22 @@ print_size() {
 main() {
   local output_dir="$HOME/Recordings/claude-skills"
   local idle="0.3"
-  local no_mp4=0
-  local cast_only=0
-  local compress_spinner=1
+  local platform="claude"
+  local cmd=""
+  no_mp4=0
+  cast_only=0
+  compress_spinner=1
   local dangerous=0
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
       -h|--help)    show_help; exit 0 ;;
+      -p|--platform)
+        [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
+        platform="$2"; shift 2 ;;
+      --cmd)
+        [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
+        cmd="$2"; shift 2 ;;
       -o|--output)
         [[ $# -ge 2 ]] || { echo "$1: missing value" >&2; exit 2; }
         output_dir="$2"; shift 2 ;;
@@ -124,24 +137,42 @@ main() {
     no_mp4=1
   fi
 
-  check_deps
+  # Default --cmd to the platform name (e.g. claude → claude, trae → trae)
+  if [[ -z "$cmd" ]]; then
+    cmd="$platform"
+  fi
+
+  # -d is Claude-specific; reject it on other platforms
+  if [[ $dangerous -eq 1 ]]; then
+    if [[ "$platform" != "claude" ]]; then
+      echo "error: -d/--dangerously-skip-permissions only applies to --platform=claude" >&2
+      exit 2
+    fi
+    cmd="$cmd --dangerously-skip-permissions"
+  fi
+
+  # Resolve the actual binary so check_deps can verify it's installed.
+  # First whitespace-delimited token of cmd.
+  local cli_bin
+  cli_bin="${cmd%% *}"
+
+  local os
+  os="$(detect_os)"
+  check_deps "$os" "$cli_bin"
 
   local base cast_path gif_path mp4_path
-  base="$(prepare_paths "$output_dir")"
+  base="$(prepare_paths "$output_dir" "$platform")"
   cast_path="$base.cast"
   gif_path="$base.gif"
   mp4_path="$base.mp4"
 
-  local claude_cmd="claude"
-  if [[ $dangerous -eq 1 ]]; then
-    claude_cmd="claude --dangerously-skip-permissions"
-  fi
-
+  echo "platform: $platform"
+  echo "command: $cmd"
   echo "output dir ready: $output_dir"
   echo "recording to: $cast_path"
-  echo "(exit claude with /quit when done)"
-  if ! asciinema rec --idle-time-limit="$idle" --command "$claude_cmd" "$cast_path"; then
-    echo "warning: claude exited non-zero (cast file is still valid)" >&2
+  echo "(exit the CLI when done)"
+  if ! asciinema rec --idle-time-limit="$idle" --command "$cmd" "$cast_path"; then
+    echo "warning: $cli_bin exited non-zero (cast file is still valid)" >&2
   fi
   echo "recording stopped: $cast_path"
 
@@ -153,7 +184,7 @@ main() {
     local compressed_cast=""
     if [[ $compress_spinner -eq 1 ]]; then
       compressed_cast="$base.compressed.cast"
-      if python3 "$SCRIPT_DIR/compress-spinner.py" "$cast_path" "$compressed_cast"; then
+      if python3 "$SCRIPT_DIR/compress-spinner.py" --platform "$platform" "$cast_path" "$compressed_cast"; then
         agg_input="$compressed_cast"
       else
         echo "warning: spinner compression failed; using raw cast" >&2
